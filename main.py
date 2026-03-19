@@ -168,8 +168,32 @@ if __name__ == '__main__':
     add_argument(
         "--language",
         type=str,
-        help="Language of TLDR",
-        default="English",
+        help="Target language for TLDR translation",
+        default="Chinese",
+    )
+    add_argument(
+        "--use_volcengine_translation",
+        type=bool,
+        help="Use Volcengine for TLDR translation",
+        default=True,
+    )
+    add_argument(
+        "--volcengine_api_key",
+        type=str,
+        help="Volcengine API key for translation",
+        default=None,
+    )
+    add_argument(
+        "--volcengine_base_url",
+        type=str,
+        help="Volcengine translation endpoint",
+        default="https://ark.cn-beijing.volces.com/api/v3/chat/completions",
+    )
+    add_argument(
+        "--volcengine_translation_model",
+        type=str,
+        help="Volcengine model for translation",
+        default="doubao-seed-2-0-lite-260215",
     )
     parser.add_argument('--debug', action='store_true', help='Debug mode')
     args = parser.parse_args()
@@ -208,17 +232,32 @@ if __name__ == '__main__':
           exit(0)
     else:
         logger.info("Reranking papers...")
-        papers = rerank_paper(papers, corpus)
+        papers, _, _ = rerank_paper(papers, [], [], corpus)
         if args.max_paper_num != -1:
             papers = papers[:args.max_paper_num]
         if args.use_llm_api:
             logger.info("Using OpenAI API as global LLM.")
-            set_global_llm(api_key=args.openai_api_key, base_url=args.openai_api_base, model=args.model_name, lang=args.language)
+            set_global_llm(
+                api_key=args.openai_api_key,
+                base_url=args.openai_api_base,
+                model=args.model_name,
+                lang=args.language,
+                use_volcengine_translation=args.use_volcengine_translation,
+                volcengine_api_key=args.volcengine_api_key,
+                volcengine_base_url=args.volcengine_base_url,
+                volcengine_translation_model=args.volcengine_translation_model,
+            )
         else:
             logger.info("Using Local LLM as global LLM.")
-            set_global_llm(lang=args.language)
+            set_global_llm(
+                lang=args.language,
+                use_volcengine_translation=args.use_volcengine_translation,
+                volcengine_api_key=args.volcengine_api_key,
+                volcengine_base_url=args.volcengine_base_url,
+                volcengine_translation_model=args.volcengine_translation_model,
+            )
 
-    html = render_email(papers)
+    html = render_email(papers, [], [])
     logger.info("Sending email...")
     send_email(args.sender, args.receiver, args.sender_password, args.smtp_server, args.smtp_port, html)
     logger.success("Email sent successfully! If you don't receive the email, please check the configuration and the junk box.")

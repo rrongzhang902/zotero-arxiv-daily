@@ -51,4 +51,4 @@ RUN if [ "$USE_LLM_API" = "0" ]; then \
     fi
 
 # 设置容器启动命令（由compose覆盖）
-CMD ["cd /app && /usr/local/bin/uv run main.py"]
+CMD ["sh", "-lc", "cd /app && /usr/local/bin/uv run biorxiv_demo.py"]

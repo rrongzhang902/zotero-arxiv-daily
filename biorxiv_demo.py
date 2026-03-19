@@ -15,6 +15,7 @@ from gitignore_parser import parse_gitignore
 from tempfile import mkstemp
 from paper import ArxivPaper, BiorxivPaper
 from llm import set_global_llm
+from journal import get_journal_paper
 import feedparser
 from datetime import datetime, timedelta
 import requests
@@ -67,6 +68,9 @@ def filter_corpus(corpus:list[dict], pattern:str) -> list[dict]:
 
 
 def get_arxiv_paper(query:str, debug:bool=False) -> list[ArxivPaper]:
+    if query is None or query.strip() == "":
+        logger.info("No arXiv query configured.")
+        return []
     client = arxiv.Client(num_retries=10,delay_seconds=10)
     feed = feedparser.parse(f"https://rss.arxiv.org/atom/{query}")
     if 'Feed error for query' in feed.feed.title:
@@ -115,6 +119,10 @@ def get_biorxiv_paper(query: str, debug: bool = False) -> list[BiorxivPaper]:
         requests.RequestException: If the API request fails
         ValueError: If the query is invalid
     """
+    if query is None or query.strip() == "":
+        logger.info("No bioRxiv query configured.")
+        return []
+
     session = requests.Session()
     retries = Retry(
         total=BIORXIV_MAX_RETRIES,
@@ -253,8 +261,12 @@ if __name__ == '__main__':
     add_argument('--send_empty', type=bool, help='If get no arxiv paper, send empty email',default=False)
     add_argument('--max_paper_num', type=int, help='Maximum number of papers to recommend',default=50)
     add_argument('--max_biorxiv_num', type=int, help='Maximum number of biorxiv papers to recommend',default=50)
+    add_argument('--max_journal_num', type=int, help='Maximum number of journal papers to recommend',default=50)
     add_argument('--arxiv_query', type=str, help='Arxiv search query')
     add_argument('--biorxiv_query', type=str, help='Biorxiv search category')
+    add_argument('--journal_sources', type=str, help='Configured journal sources')
+    add_argument('--journal_group', type=str, help='Configured journal group', default='all')
+    add_argument('--journal_lookback_days', type=int, help='Lookback days for journal sources', default=7)
     add_argument('--smtp_server', type=str, help='SMTP server')
     add_argument('--smtp_port', type=int, help='SMTP port')
     add_argument('--sender', type=str, help='Sender email address')
@@ -287,8 +299,32 @@ if __name__ == '__main__':
     add_argument(
         "--language",
         type=str,
-        help="Language of TLDR",
-        default="English",
+        help="Target language for TLDR translation",
+        default="Chinese",
+    )
+    add_argument(
+        "--use_volcengine_translation",
+        type=bool,
+        help="Use Volcengine for TLDR translation",
+        default=True,
+    )
+    add_argument(
+        "--volcengine_api_key",
+        type=str,
+        help="Volcengine API key for translation",
+        default=None,
+    )
+    add_argument(
+        "--volcengine_base_url",
+        type=str,
+        help="Volcengine translation endpoint",
+        default="https://ark.cn-beijing.volces.com/api/v3/chat/completions",
+    )
+    add_argument(
+        "--volcengine_translation_model",
+        type=str,
+        help="Volcengine model for translation",
+        default="doubao-seed-2-0-lite-260215",
     )
     parser.add_argument('--debug', action='store_true', help='Debug mode')
     args = parser.parse_args()
@@ -319,31 +355,54 @@ if __name__ == '__main__':
         logger.info(f"Ignoring papers in:\n {args.zotero_ignore}...")
         corpus = filter_corpus(corpus, args.zotero_ignore)
         logger.info(f"Remaining {len(corpus)} papers after filtering.")
-    logger.info("Retrieving Biorxiv papers...")
+    logger.info("Retrieving candidate papers...")
     papers = get_arxiv_paper(args.arxiv_query, args.debug)
     biorxiv_papers = get_biorxiv_paper(args.biorxiv_query, args.debug)
+    journal_papers = get_journal_paper(
+        args.journal_sources,
+        journal_group=args.journal_group,
+        debug=args.debug,
+        lookback_days=args.journal_lookback_days,
+    )
     logger.info(f"Retrieved {len(papers)} papers from Arxiv.")
     logger.info(f"Retrieved {len(biorxiv_papers)} papers from Biorxiv.")
-    if len(papers) == 0 and len(biorxiv_papers) == 0:
+    logger.info(f"Retrieved {len(journal_papers)} papers from Journals.")
+    if len(papers) == 0 and len(biorxiv_papers) == 0 and len(journal_papers) == 0:
         logger.info("No new papers found. Yesterday maybe a holiday and no one submit their work :). If this is not the case, please check the ARXIV_QUERY.")
         if not args.send_empty:
           exit(0)
     else:
         logger.info("Reranking papers...")
-        papers, biorxiv_papers = rerank_paper(papers, biorxiv_papers, corpus)
-        # biorxiv_papers = rerank_biorxiv_paper(papers, corpus)
+        papers, biorxiv_papers, journal_papers = rerank_paper(papers, biorxiv_papers, journal_papers, corpus)
         if args.max_paper_num != -1 and args.max_paper_num < len(papers):
             papers = papers[:args.max_paper_num]
         if args.max_biorxiv_num != -1 and args.max_biorxiv_num < len(biorxiv_papers):
             biorxiv_papers = biorxiv_papers[:args.max_biorxiv_num]
+        if args.max_journal_num != -1 and args.max_journal_num < len(journal_papers):
+            journal_papers = journal_papers[:args.max_journal_num]
         if args.use_llm_api:
             logger.info("Using OpenAI API as global LLM.")
-            set_global_llm(api_key=args.openai_api_key, base_url=args.openai_api_base, model=args.model_name, lang=args.language)
+            set_global_llm(
+                api_key=args.openai_api_key,
+                base_url=args.openai_api_base,
+                model=args.model_name,
+                lang=args.language,
+                use_volcengine_translation=args.use_volcengine_translation,
+                volcengine_api_key=args.volcengine_api_key,
+                volcengine_base_url=args.volcengine_base_url,
+                volcengine_translation_model=args.volcengine_translation_model,
+            )
         else:
             logger.info("Using Local LLM as global LLM.")
-            set_global_llm(lang=args.language)
+            set_global_llm(
+                lang=args.language,
+                use_volcengine_translation=args.use_volcengine_translation,
+                volcengine_api_key=args.volcengine_api_key,
+                volcengine_base_url=args.volcengine_base_url,
+                volcengine_translation_model=args.volcengine_translation_model,
+            )
 
-    html = render_email(papers, biorxiv_papers)
+    html = render_email(papers, biorxiv_papers, journal_papers)
     logger.info("Sending email...")
     send_email(args.sender, args.receiver, args.sender_password, args.smtp_server, args.smtp_port, html)
     logger.success("Email sent successfully! If you don't receive the email, please check the configuration and the junk box.")

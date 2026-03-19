@@ -20,6 +20,9 @@ jobs:
           ZOTERO_KEY: ${{ secrets.ZOTERO_KEY }}
           ZOTERO_IGNORE: ${{ vars.ZOTERO_IGNORE }}
           ARXIV_QUERY: ${{ secrets.ARXIV_QUERY }}
+          BIORXIV_QUERY: ${{ secrets.BIORXIV_QUERY }}
+          JOURNAL_SOURCES: ${{ vars.JOURNAL_SOURCES }}
+          JOURNAL_GROUP: ${{ vars.JOURNAL_GROUP }}
           SEND_EMPTY: ${{ vars.SEND_EMPTY }}
           SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
@@ -27,10 +30,17 @@ jobs:
           RECEIVER: ${{ secrets.RECEIVER }}
           SENDER_PASSWORD: ${{ secrets.SENDER_PASSWORD }}
           MAX_PAPER_NUM: ${{ secrets.MAX_PAPER_NUM }}
+          MAX_BIORXIV_NUM: ${{ secrets.MAX_BIORXIV_NUM }}
+          MAX_JOURNAL_NUM: ${{ secrets.MAX_JOURNAL_NUM }}
           USE_LLM_API: ${{ secrets.USE_LLM_API }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
           MODEL_NAME: ${{ secrets.MODEL_NAME }}
           LANGUAGE: ${{ vars.LANGUAGE }}
+          USE_VOLCENGINE_TRANSLATION: ${{ vars.USE_VOLCENGINE_TRANSLATION }}
+          VOLCENGINE_API_KEY: ${{ secrets.VOLCENGINE_API_KEY }}
+          VOLCENGINE_BASE_URL: ${{ vars.VOLCENGINE_BASE_URL }}
+          VOLCENGINE_TRANSLATION_MODEL: ${{ vars.VOLCENGINE_TRANSLATION_MODEL }}
+          JOURNAL_LOOKBACK_DAYS: ${{ vars.JOURNAL_LOOKBACK_DAYS }}
         run: |
           uv run biorxiv_demo.py --debug

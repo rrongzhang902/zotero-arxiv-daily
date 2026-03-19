@@ -20,13 +20,23 @@ services:
       # 可选参数（带默认值）
       - ZOTERO_IGNORE=already_read_papers
       - ARXIV_QUERY=cs.AI+cs.CV+cs.LG+cs.CL
+      - BIORXIV_QUERY=cell_biology+neuroscience
+      - JOURNAL_SOURCES=Nature,Science,Cell,PNAS,Bioinformatics
+      - JOURNAL_GROUP=all
       - SEND_EMPTY=False
       - MAX_PAPER_NUM=5
+      - MAX_BIORXIV_NUM=5
+      - MAX_JOURNAL_NUM=10
       - USE_LLM_API=1
       - OPENAI_API_KEY=sk-your-openai-key-here
       - OPENAI_API_BASE=https://api.openai.com/v1
       - MODEL_NAME=Qwen/Qwen1.5-7B-Instruct
-      - LANGUAGE=English
+      - LANGUAGE=Chinese
+      - USE_VOLCENGINE_TRANSLATION=1
+      - VOLCENGINE_API_KEY=your-volcengine-api-key-here
+      - VOLCENGINE_BASE_URL=https://ark.cn-beijing.volces.com/api/v3/chat/completions
+      - VOLCENGINE_TRANSLATION_MODEL=doubao-seed-2-0-lite-260215
+      - JOURNAL_LOOKBACK_DAYS=7
       
       # 新增配置
       - HF_ENDPOINT=https://hf-mirror.com
@@ -44,7 +54,7 @@ services:
       bash -c "
       rm -f /var/run/crond.pid /var/run/cron.pid && 
       printenv | grep -v 'no_proxy' >> /etc/environment && 
-      echo '0 8 * * * root cd /app && /usr/local/bin/uv run main.py >> /var/log/cron/corn.log 2>&1' > /etc/cron.d/zotero-job && 
+      echo '0 8 * * * root cd /app && /usr/local/bin/uv run biorxiv_demo.py >> /var/log/cron/corn.log 2>&1' > /etc/cron.d/zotero-job && 
       chmod 0644 /etc/cron.d/zotero-job && 
       touch /var/log/cron/corn.log && 
       cron -f &&
