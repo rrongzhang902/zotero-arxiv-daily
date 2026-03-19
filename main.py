@@ -16,6 +16,7 @@ arxiv.Result._get_pdf_url = _get_pdf_url_patch
 import argparse
 import os
 import sys
+import time
 import yaml
 from dotenv import load_dotenv
 load_dotenv(override=True)
@@ -31,12 +32,58 @@ from paper import ArxivPaper
 from llm import set_global_llm
 import feedparser
 
+ARXIV_BATCH_SIZE = 20
+ARXIV_BATCH_PAUSE_SECONDS = 3
+ARXIV_MAX_RETRIES = 5
+ARXIV_RETRY_DELAY_SECONDS = 15
+
 def _build_search_query(arxiv_query: str) -> str:
     # Convert category list like "cs.AI+cs.CL" to a search query understood by arxiv.Search
     cleaned = [q.strip() for q in arxiv_query.replace(" ", "").split("+") if q.strip()]
     if not cleaned:
         return ""
     return " OR ".join(f"cat:{q}" for q in cleaned)
+
+
+def _is_arxiv_rate_limit_error(exc: Exception) -> bool:
+    return "429" in str(exc)
+
+
+def _fetch_arxiv_batch(client: arxiv.Client, batch_ids: list[str]) -> list[ArxivPaper]:
+    delay = ARXIV_RETRY_DELAY_SECONDS
+    last_exc = None
+    for attempt in range(ARXIV_MAX_RETRIES):
+        try:
+            search = arxiv.Search(id_list=batch_ids)
+            return [ArxivPaper(p) for p in client.results(search)]
+        except Exception as exc:
+            last_exc = exc
+            if not _is_arxiv_rate_limit_error(exc):
+                raise
+            logger.warning(
+                "arXiv rate limited for batch size {} (attempt {}/{}). Retrying in {}s.",
+                len(batch_ids),
+                attempt + 1,
+                ARXIV_MAX_RETRIES,
+                delay,
+            )
+            time.sleep(delay)
+            delay *= 2
+
+    if len(batch_ids) <= 5:
+        raise last_exc
+
+    mid = len(batch_ids) // 2
+    logger.warning(
+        "Repeated arXiv 429 for batch size {}. Splitting batch into {} and {}.",
+        len(batch_ids),
+        mid,
+        len(batch_ids) - mid,
+    )
+    left = _fetch_arxiv_batch(client, batch_ids[:mid])
+    time.sleep(ARXIV_BATCH_PAUSE_SECONDS)
+    right = _fetch_arxiv_batch(client, batch_ids[mid:])
+    return left + right
 
 
 def get_zotero_corpus(id:str,key:str) -> list[dict]:
@@ -85,11 +132,12 @@ def get_arxiv_paper(query:str, debug:bool=False) -> list[ArxivPaper]:
                 return [ArxivPaper(p) for p in client.results(search)]
             return []
         bar = tqdm(total=len(all_paper_ids),desc="Retrieving Arxiv papers")
-        for i in range(0,len(all_paper_ids),20):
-            search = arxiv.Search(id_list=all_paper_ids[i:i+20])
-            batch = [ArxivPaper(p) for p in client.results(search)]
+        for i in range(0,len(all_paper_ids),ARXIV_BATCH_SIZE):
+            batch_ids = all_paper_ids[i:i+ARXIV_BATCH_SIZE]
+            batch = _fetch_arxiv_batch(client, batch_ids)
             bar.update(len(batch))
             papers.extend(batch)
+            time.sleep(ARXIV_BATCH_PAUSE_SECONDS)
         bar.close()
 
     else:
