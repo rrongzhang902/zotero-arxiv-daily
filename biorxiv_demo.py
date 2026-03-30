@@ -37,13 +37,6 @@ ARXIV_RETRY_DELAY_SECONDS = 15
 def _normalize_biorxiv_category(category: str) -> str:
     return category.strip().lower().replace(" ", "_").replace("-", "_")
 
-def _build_search_query(arxiv_query: str) -> str:
-    cleaned = [q.strip() for q in arxiv_query.replace(" ", "").split("+") if q.strip()]
-    if not cleaned:
-        return ""
-    return " OR ".join(f"cat:{q}" for q in cleaned)
-
-
 def _is_arxiv_rate_limit_error(exc: Exception) -> bool:
     return "429" in str(exc)
 
@@ -61,16 +54,6 @@ def _feed_entry_target_date(entry) -> date | None:
                 parsed.tm_sec,
                 tzinfo=timezone.utc,
             ).date()
-    return None
-
-
-def _arxiv_result_target_date(result: arxiv.Result) -> date | None:
-    published = getattr(result, "published", None)
-    if published is not None:
-        return published.date()
-    updated = getattr(result, "updated", None)
-    if updated is not None:
-        return updated.date()
     return None
 
 
@@ -157,12 +140,7 @@ def get_arxiv_paper(query:str, debug:bool=False) -> list[ArxivPaper]:
             if i.arxiv_announce_type == 'new' and _feed_entry_target_date(i) in target_dates
         ]
         if len(all_paper_ids) == 0:
-            logger.info("No arXiv papers found in the scheduled UTC two-day window. Fetching recent submissions and filtering by date.")
-            search_query = _build_search_query(query)
-            if search_query:
-                search = arxiv.Search(query=search_query, sort_by=arxiv.SortCriterion.SubmittedDate, max_results=100)
-                recent = [ArxivPaper(p) for p in client.results(search) if _arxiv_result_target_date(p) in target_dates]
-                return recent
+            logger.info("No arXiv papers found in the scheduled UTC two-day window.")
             return []
         bar = tqdm(total=len(all_paper_ids),desc="Retrieving Arxiv papers")
         for i in range(0,len(all_paper_ids),ARXIV_BATCH_SIZE):
